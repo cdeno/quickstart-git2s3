@@ -15,6 +15,7 @@ from ipaddress import ip_network, ip_address
 import logging
 import hmac
 import hashlib
+import subprocess
 
 # If true the function will not include .git folder in the zip
 exclude_git = True
@@ -83,8 +84,8 @@ def pull_repo(repo, branch_name, remote_url, creds):
     remote.fetch(callbacks=creds)
     if(branch_name.startswith('tags/')):
         ref = 'refs/' + branch_name
-    else:
-        ref = 'refs/remotes/origin/' + branch_name
+    # else:
+    #     ref = 'refs/remotes/origin/' + branch_name
     remote_branch_id = repo.lookup_reference(ref).target
     repo.checkout_tree(repo.get(remote_branch_id))
     # branch_ref = repo.lookup_reference('refs/heads/' + branch_name)
@@ -117,6 +118,19 @@ def push_s3(filename, repo_name, outputbucket):
     s3.put_object(Bucket=outputbucket, Body=data, Key=s3key)
     logger.info('Completed S3 upload...')
 
+def sync_repo_s3(source_dir, to_bucket, prefix):
+    # Sync Git branch contents to S3 bucket
+    command = ["./aws", "s3", "sync", "--exclude", ".git/*", "--acl", "public-read", "--delete",
+               source_dir + "/", "s3://" + to_bucket + "/" + prefix]
+    # command = ["./aws", "s3", "help"]
+    logger.info('10. XXXCVFDFDFc')
+    # command = ["./aws", "s3", "help"]
+
+    logger.info(command)
+    try:
+        logger.info(subprocess.check_output(command, stderr=subprocess.STDOUT))
+    except subprocess.CalledProcessError as e:
+        print e.output
 
 def lambda_handler(event, context):
     keybucket = event['context']['key-bucket']
@@ -189,9 +203,12 @@ def lambda_handler(event, context):
     except Exception:
         logger.info('creating new repo for %s in %s' % (remote_url, repo_path))
         repo = create_repo(repo_path, remote_url, creds)
+
     pull_repo(repo, branch_name, remote_url, creds)
-    zipfile = zip_repo(repo_path, repo_name)
-    push_s3(zipfile, repo_name, outputbucket)
+    # zipfile = zip_repo(repo_path, repo_name)
+    # push_s3(zipfile, repo_name, outputbucket)
+    sync_repo_s3(repo_path, outputbucket, full_name + "/" + branch_name)
+
     if cleanup:
         logger.info('Cleanup Lambda container...')
         shutil.rmtree(repo_path)
